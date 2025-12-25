@@ -203,6 +203,14 @@ async function handleCommand(command, params) {
       return await getPages();
     case "set_current_page":
       return await setCurrentPage(params);
+    case "add_prototype_interaction":
+      return await addPrototypeInteraction(params);
+    case "remove_prototype_interactions":
+      return await removePrototypeInteractions(params);
+    case "get_prototype_interactions":
+      return await getPrototypeInteractions(params);
+    case "set_starting_frame":
+      return await setStartingFrame(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -3595,5 +3603,191 @@ async function setCurrentPage(params) {
   return {
     id: page.id,
     name: page.name
+  };
+}
+
+// Prototype interaction tools
+
+async function addPrototypeInteraction(params) {
+  const {
+    sourceNodeId,
+    destinationNodeId,
+    trigger = "ON_CLICK",
+    navigation = "NAVIGATE",
+    transition,
+    preserveScrollPosition = false
+  } = params || {};
+
+  if (!sourceNodeId) {
+    throw new Error("Missing sourceNodeId parameter");
+  }
+  if (!destinationNodeId) {
+    throw new Error("Missing destinationNodeId parameter");
+  }
+
+  const sourceNode = await figma.getNodeByIdAsync(sourceNodeId);
+  if (!sourceNode) {
+    throw new Error(`Source node not found with ID: ${sourceNodeId}`);
+  }
+
+  const destinationNode = await figma.getNodeByIdAsync(destinationNodeId);
+  if (!destinationNode) {
+    throw new Error(`Destination node not found with ID: ${destinationNodeId}`);
+  }
+
+  // Check if node supports reactions
+  if (!("reactions" in sourceNode)) {
+    throw new Error(`Source node does not support prototype interactions: ${sourceNodeId}`);
+  }
+
+  // Build the reaction object
+  const reaction = {
+    action: {
+      type: "NODE",
+      destinationId: destinationNodeId,
+      navigation: navigation,
+      preserveScrollPosition: preserveScrollPosition
+    },
+    trigger: {
+      type: trigger
+    }
+  };
+
+  // Add transition if provided
+  if (transition) {
+    reaction.action.transition = {
+      type: transition.type || "DISSOLVE",
+      duration: transition.duration || 300,
+      easing: {
+        type: transition.easing || "EASE_OUT"
+      }
+    };
+
+    // Add direction for move/slide transitions
+    if (transition.direction && ["MOVE_IN", "MOVE_OUT", "PUSH", "SLIDE_IN", "SLIDE_OUT"].includes(transition.type)) {
+      reaction.action.transition.direction = transition.direction;
+    }
+  }
+
+  // Get existing reactions and add the new one
+  const existingReactions = sourceNode.reactions ? [...sourceNode.reactions] : [];
+  existingReactions.push(reaction);
+  sourceNode.reactions = existingReactions;
+
+  return {
+    sourceNodeId: sourceNode.id,
+    sourceName: sourceNode.name,
+    destinationNodeId: destinationNode.id,
+    destinationName: destinationNode.name,
+    trigger: trigger,
+    navigation: navigation,
+    reactionsCount: sourceNode.reactions.length
+  };
+}
+
+async function removePrototypeInteractions(params) {
+  const { nodeId } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (!("reactions" in node)) {
+    throw new Error(`Node does not support prototype interactions: ${nodeId}`);
+  }
+
+  const removedCount = node.reactions ? node.reactions.length : 0;
+  node.reactions = [];
+
+  return {
+    nodeId: node.id,
+    name: node.name,
+    removedCount: removedCount
+  };
+}
+
+async function getPrototypeInteractions(params) {
+  const { nodeId } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (!("reactions" in node)) {
+    throw new Error(`Node does not support prototype interactions: ${nodeId}`);
+  }
+
+  // Map reactions to a safe format
+  const reactions = (node.reactions || []).map(reaction => {
+    const result = {
+      trigger: reaction.trigger ? reaction.trigger.type : null,
+      action: null
+    };
+
+    if (reaction.action) {
+      result.action = {
+        type: reaction.action.type,
+        navigation: reaction.action.navigation || null,
+        destinationId: reaction.action.destinationId || null,
+        preserveScrollPosition: reaction.action.preserveScrollPosition || false
+      };
+
+      if (reaction.action.transition) {
+        result.action.transition = {
+          type: reaction.action.transition.type,
+          duration: reaction.action.transition.duration,
+          easing: reaction.action.transition.easing ? reaction.action.transition.easing.type : null,
+          direction: reaction.action.transition.direction || null
+        };
+      }
+    }
+
+    return result;
+  });
+
+  return {
+    nodeId: node.id,
+    name: node.name,
+    reactionsCount: reactions.length,
+    reactions: reactions
+  };
+}
+
+async function setStartingFrame(params) {
+  const { nodeId } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (node.type !== "FRAME") {
+    throw new Error(`Node must be a FRAME to be set as starting point. Got: ${node.type}`);
+  }
+
+  // Set the frame as the starting point for the prototype
+  // In Figma, this is done by setting the prototypeStartNode on the page
+  const page = figma.currentPage;
+  page.prototypeStartNode = node;
+
+  return {
+    nodeId: node.id,
+    name: node.name,
+    pageId: page.id,
+    pageName: page.name
   };
 }
