@@ -84,4 +84,8 @@ export type FigmaCommand =
   | "group_nodes"
   | "ungroup_nodes"
   | "flatten_node"
-  | "insert_child";
+  | "insert_child"
+  | "add_prototype_interaction"
+  | "remove_prototype_interactions"
+  | "get_prototype_interactions"
+  | "set_starting_frame";
